@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Document</title>
+</head>
+
+<style>
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-family: sans-serif;
+  }
+
+  #container {
+    max-width: 400px;
+    margin-top: 64px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .title {
+    text-align: center;
+    margin-bottom: 24px;
+  }
+
+  #logoImg {
+    width: 128px;
+    height: 128px;
+  }
+
+  .input-container {
+    width: 100%;
+  }
+
+  .input-container>input {
+    width: 100%;
+  }
+
+  #submitButton {
+    margin-top: 16px;
+    width: 100%;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  .errorMessage {
+    color: #d20000;
+    margin-top: 8px;
+  }
+
+  .successMessage {
+    color: #037a01;
+  }
+
+  .hiddenMessage {
+    opacity: 0;
+  }
+
+  #modalContainer {
+    width: 100%;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.25);
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  #modalContent {
+    padding: 24px;
+    max-width: 500px;
+    background-color: white;
+    border-radius: 6px;
+  }
+
+  #modalContent>p {
+    text-align: justify;
+  }
+
+  #modalButtons {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 52px;
+  }
+
+  .modalButton {
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 6px 16px;
+    border: 1px solid #c6c6c6;
+    border-radius: 4px;
+  }
+
+  #modalCancel {
+    margin-right: 24px;
+  }
+
+  #modalSubmit {
+    color: #d20000;
+  }
+
+  .modalHidden {
+    visibility: hidden;
+  }
+</style>
+
+<body>
+  <div id="container">
+    <img id="logoImg" src="./logo.png" alt="Carry - Lista de compras" />
+
+    <h1 class="title">Carry</h1>
+
+    <h2 class="title">Deletar conta e todos dados armazenados pelo Carry.</h1>
+
+      <div class="input-container">
+        <label for="email">Email:</label>
+        <input type="email" id="email" required /><br /><br />
+      </div>
+
+      <div class="input-container">
+        <label for="password">Senha:</label>
+        <input type="password" id="password" required /><br /><br />
+      </div>
+
+      <button id="submitButton">Deletar conta e dados</button>
+
+      <small id="errorMessage" class="hiddenMessage">Usuário não encontrado.</small>
+
+      <div id="modalContainer" class="modalHidden">
+        <div id="modalContent">
+          <p>Esta conta e todos os dados armazenados pelo aplicativo Carry serão deletados. Essa ação não pode ser
+            desfeita. Deseja prosseguir?</p>
+
+          <div id="modalButtons">
+
+            <button class="modalButton" id="modalCancel" type="button">Cancelar</button>
+            <button class="modalButton" id="modalSubmit" type="button">Deletar</button>
+          </div>
+        </div>
+      </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
+    import {
+      getAuth,
+      signInWithEmailAndPassword,
+    } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-auth.js";
+    import {
+      getFirestore,
+      collection,
+      query,
+      where,
+      getDocs,
+      deleteDoc,
+      writeBatch,
+      startAfter,
+      limit,
+    } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyClyLl5BD1PughoZxbJGJ6v3RVKAzfH9DA",
+      authDomain: "carry-cc443.firebaseapp.com",
+      projectId: "carry-cc443",
+      storageBucket: "carry-cc443.appspot.com",
+      messagingSenderId: "869975547566",
+      appId: "1:869975547566:web:ac7f2872e960e64f2fd73f",
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth();
+    const db = getFirestore(app);
+    const MAX_BATCHES_WRITE = 500;
+    let lastDocument = null;
+
+    async function deleteShoppingItemSubcollection(id, callback) {
+      const subcol = collection(db, "ShoppingItemList", id, "ShoppingItem");
+      let q = query(subcol, limit(MAX_BATCHES_WRITE));
+      const batch = writeBatch(db);
+
+      if (lastDocument) {
+        q = query(subcol, startAfter(lastDocument), limit(MAX_BATCHES_WRITE));
+      }
+
+      const snapshot = await getDocs(q);
+
+      if (snapshot.size > 0) {
+        lastDocument = snapshot.docs[snapshot.docs.length - 1];
+
+        snapshot.forEach((doc) => {
+          batch.delete(doc.ref);
+        });
+
+        await batch.commit();
+        console.log(`Committed one batch with ${snapshot.size} document(s).`);
+
+        deleteShoppingItemSubcollection(id, callback);
+      } else {
+        callback();
+      }
+    }
+
+    async function handleShoppingItemListDeletion(userId) {
+      const col = collection(db, "ShoppingItemList");
+      const w = where("owner_id", "==", userId);
+      const q = query(col, w);
+      const snapshot = await getDocs(q);
+      const promises = [];
+
+      snapshot.forEach((doc) => {
+        const p = new Promise((resolve) => {
+          console.log("Deleting shopping items per batch.");
+          deleteShoppingItemSubcollection(doc.id, async () => {
+            console.log("Deleting shopping item list document.");
+            await deleteDoc(doc.ref);
+            resolve(true);
+          });
+        });
+
+        promises.push(p);
+      });
+
+      return Promise.all(promises);
+    }
+
+    function deleteAccountAndData() {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      const submitButtonElem = document.querySelector("#submitButton");
+
+      submitButtonElem.setAttribute("disabled", true);
+
+      signInWithEmailAndPassword(auth, email, password)
+        .then(async (userCredential) => {
+          const user = userCredential.user;
+
+          await handleShoppingItemListDeletion(user.uid);
+
+          user.delete().then(() => {
+            console.log("Deleted user.");
+
+            document.getElementById("email").value = "";
+            document.getElementById("password").value = "";
+            submitButtonElem.removeAttribute("disabled");
+            const smallElem = document.querySelector("#errorMessage");
+            smallElem.innerText = "Usuário deletado.";
+            smallElem.classList.remove("hiddenMessage");
+            smallElem.classList.add("successMessage");
+
+            closeModal();
+          });
+        })
+        .catch((error) => {
+          const smallElem = document.querySelector("#errorMessage");
+          smallElem.innerText = "Usuário não encontrado.";
+          smallElem.classList.remove("hiddenMessage");
+          smallElem.classList.add("errorMessage");
+          console.error("Error signing in:", error);
+
+          submitButtonElem.removeAttribute("disabled");
+
+          closeModal();
+        });
+    }
+
+    function openModal() {
+      document.querySelector("#modalContainer").classList.remove("modalHidden");
+    }
+
+    function closeModal() {
+      document.querySelector("#modalContainer").classList.add("modalHidden");
+    }
+
+    document.querySelector("#submitButton").onclick = openModal;
+    document.querySelector("#modalSubmit").onclick = deleteAccountAndData;
+    document.querySelector("#modalCancel").onclick = closeModal;
+    document.querySelector("#modalContainer").onclick = closeModal;
+    document.querySelector("#modalContent").onclick = e => e.stopPropagation();
+  </script>
+
+  <script>
+    document.querySelectorAll("input").forEach((elem) => {
+      elem.oninput = (e) => {
+        const smallElem = document.querySelector("#errorMessage");
+        smallElem.innerText = "";
+        smallElem.classList.add("hiddenMessage");
+        smallElem.classList.remove("errorMessage");
+        smallElem.classList.remove("successMessage");
+      };
+    });
+  </script>
+</body>
+
+</html>
